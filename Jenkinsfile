@@ -45,65 +45,7 @@ pipeline {
 
         stage('Push Docker Image') {
             steps {
-                withCredentials([
-                    usernamePassword(
-                        credentialsId: 'ghcr-credentials',
-                        usernameVariable: 'GHCR_USER',
-                        passwordVariable: 'GHCR_TOKEN'
-                    )
-                ]) {
-                    powershell '''
-                    $ErrorActionPreference = "Stop"
-
-                    if ([string]::IsNullOrWhiteSpace($env:GHCR_TOKEN)) {
-                        throw "GHCR token is empty"
-                    }
-
-                    $token = $env:GHCR_TOKEN.Trim()
-                    $username = $env:GHCR_USER.Trim()
-
-                    if (-not $token.StartsWith("ghp_")) {
-                        throw "Check Jenkins credentials: a GitHub classic PAT is required"
-                    }
-
-                    $psi = New-Object System.Diagnostics.ProcessStartInfo
-                    $psi.FileName = (Get-Command docker.exe).Source
-                    $psi.Arguments = "login ghcr.io -u $username --password-stdin"
-                    $psi.UseShellExecute = $false
-                    $psi.RedirectStandardInput = $true
-
-                    $process = New-Object System.Diagnostics.Process
-                    $process.StartInfo = $psi
-
-                    $process.Start() | Out-Null
-
-                    $bytes = [System.Text.Encoding]::ASCII.GetBytes($token)
-                    $stream = $process.StandardInput.BaseStream
-                    $stream.Write($bytes, 0, $bytes.Length)
-                    $stream.Close()
-
-                    $process.WaitForExit()
-
-                    if ($process.ExitCode -ne 0) {
-                        throw "Registry login failed. Verify the saved GHCR credential."
-                    }
-
-                    Write-Output "GHCR authentication successful"
-
-                    try {
-                        docker push "$($env:IMAGE_NAME):ci-$($env:BUILD_NUMBER)"
-
-                        if ($LASTEXITCODE -ne 0) {
-                            throw "Image push failed"
-                        }
-
-                        Write-Output "Docker image pushed successfully"
-                    }
-                    finally {
-                        docker logout ghcr.io
-                    }
-                    '''
-                }
+                bat 'docker push %IMAGE_NAME%:ci-%BUILD_NUMBER%'
             }
         }
 
