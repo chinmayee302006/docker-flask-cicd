@@ -25,11 +25,9 @@ pipeline {
 
         stage('Install Dependencies') {
             steps {
-                bat '''
-                docker run -d --name flask-test-%BUILD_NUMBER% --mount "type=bind,source=%WORKSPACE%,target=/workspace,readonly" python:3.12-slim sleep 3600
+                bat 'docker run -d --name flask-test-%BUILD_NUMBER% --mount "type=bind,source=%WORKSPACE%,target=/workspace,readonly" python:3.12-slim sleep 3600'
 
-                docker exec flask-test-%BUILD_NUMBER% pip install -r /workspace/requirements.txt
-                '''
+                bat 'docker exec flask-test-%BUILD_NUMBER% pip install -r /workspace/requirements.txt'
             }
         }
 
@@ -55,11 +53,42 @@ pipeline {
                     )
                 ]) {
                     powershell '''
-                    $env:GHCR_TOKEN | docker login ghcr.io -u $env:GHCR_USER --password-stdin
+                    $ErrorActionPreference = "Stop"
 
-                    if ($LASTEXITCODE -ne 0) {
-                        throw "Registry login failed"
+                    if ([string]::IsNullOrWhiteSpace($env:GHCR_TOKEN)) {
+                        throw "GHCR token is empty"
                     }
+
+                    $token = $env:GHCR_TOKEN.Trim()
+                    $username = $env:GHCR_USER.Trim()
+
+                    if (-not $token.StartsWith("ghp_")) {
+                        throw "Check Jenkins credentials: a GitHub classic PAT is required"
+                    }
+
+                    $psi = New-Object System.Diagnostics.ProcessStartInfo
+                    $psi.FileName = (Get-Command docker.exe).Source
+                    $psi.Arguments = "login ghcr.io -u $username --password-stdin"
+                    $psi.UseShellExecute = $false
+                    $psi.RedirectStandardInput = $true
+
+                    $process = New-Object System.Diagnostics.Process
+                    $process.StartInfo = $psi
+
+                    $process.Start() | Out-Null
+
+                    $bytes = [System.Text.Encoding]::ASCII.GetBytes($token)
+                    $stream = $process.StandardInput.BaseStream
+                    $stream.Write($bytes, 0, $bytes.Length)
+                    $stream.Close()
+
+                    $process.WaitForExit()
+
+                    if ($process.ExitCode -ne 0) {
+                        throw "Registry login failed. Verify the saved GHCR credential."
+                    }
+
+                    Write-Output "GHCR authentication successful"
 
                     try {
                         docker push "$($env:IMAGE_NAME):ci-$($env:BUILD_NUMBER)"
@@ -67,6 +96,8 @@ pipeline {
                         if ($LASTEXITCODE -ne 0) {
                             throw "Image push failed"
                         }
+
+                        Write-Output "Docker image pushed successfully"
                     }
                     finally {
                         docker logout ghcr.io
@@ -98,6 +129,8 @@ pipeline {
                 if ($LASTEXITCODE -ne 0) {
                     throw "Deployment failed"
                 }
+
+                Write-Output "Container deployed successfully"
                 '''
             }
         }
