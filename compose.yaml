@@ -1,0 +1,21 @@
+services:
+  web:
+    build: .
+    image: my-flask-app
+    container_name: flask-compose
+    ports:
+      - "127.0.0.1:5000:5000"
+    environment:
+      APP_ENV: production
+    volumes:
+      - flask-data:/data
+    networks:
+      - flask-network
+
+volumes:
+  flask-data:
+    external: true
+
+networks:
+  flask-network:
+    external: true
